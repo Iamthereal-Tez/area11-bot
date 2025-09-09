@@ -1,138 +1,126 @@
 import discord
+from discord import app_commands
 from discord.ext import commands
-import math
-import io
-from PIL import Image, ImageDraw, ImageFont
 import aiohttp
-from utils import db
-import asyncio
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
+import os
 
 class Levels(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # prevent spam xp: user_id -> last_message_time (seconds)
-        self._recent = {}
-        self._xp_cooldown = 5  # seconds
-        # ensure DB created
-        self.bot.loop.create_task(db.init_db())
+        # choose a font file that exists - if not present, Pillow default will be used.
+        self.font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
-    @commands.Cog.listener()
-    async def on_message(self, message):
-        if message.author.bot or message.guild is None:
-            return
-        # simple cooldown per user to avoid xp spam
-        last = self._recent.get((message.guild.id, message.author.id), 0)
-        now = asyncio.get_event_loop().time()
-        if now - last < self._xp_cooldown:
-            return
-        self._recent[(message.guild.id, message.author.id)] = now
+    # ------------------------------------------------------------------
+    # Helper: create a simple profile card image (avatar + xp bar)
+    async def make_profile_card(self, member: discord.Member, xp: int, level: int):
+        width, height = 800, 250
+        background = Image.new("RGBA", (width, height), (30, 30, 30, 255))
+        draw = ImageDraw.Draw(background)
 
-        xp_gain = 5
-        xp, level = await db.add_xp(message.guild.id, message.author.id, xp_gain)
-        # compute new level using your formula: level = int(sqrt(xp) // 10)
-        new_level = int(math.sqrt(xp) // 10)
-        if new_level > level:
-            await db.set_level(message.guild.id, message.author.id, new_level)
-            embed = discord.Embed(
-                title="Level Up!",
-                description=f"🎉 {message.author.mention} reached **Level {new_level}**!",
-                color=discord.Color.green()
-            )
-            try:
-                await message.channel.send(embed=embed)
-            except discord.Forbidden:
-                # missing perms; safe to ignore or log
-                pass
-
-    @commands.command(aliases=["lvl"])
-    async def level(self, ctx, member: discord.Member = None):
-        member = member or ctx.author
-        row = await db.get_user(ctx.guild.id, member.id)
-        if row:
-            xp, level = row
-            embed = discord.Embed(title=f"{member.display_name}'s Level", color=discord.Color.gold())
-            embed.add_field(name="Level", value=str(level), inline=True)
-            embed.add_field(name="XP", value=str(xp), inline=True)
-        else:
-            embed = discord.Embed(description=f"{member.mention} has no XP yet.", color=discord.Color.red())
-        await ctx.send(embed=embed)
-
-    @commands.command()
-    async def leaderboard(self, ctx, limit: int = 10):
-        rows = await db.top_users(ctx.guild.id, limit)
-        if not rows:
-            return await ctx.send(embed=discord.Embed(description="No data yet.", color=discord.Color.red()))
-        embed = discord.Embed(title="🏆 Leaderboard", color=discord.Color.blue())
-        for i, (user_id, xp, level) in enumerate(rows, start=1):
-            member = ctx.guild.get_member(user_id) or await self.bot.fetch_user(user_id)
-            name = member.display_name if isinstance(member, discord.Member) else member.name
-            embed.add_field(name=f"#{i} — {name}", value=f"Level {level} | {xp} XP", inline=False)
-        await ctx.send(embed=embed)
-
-    @commands.command()
-    async def profile(self, ctx, member: discord.Member = None):
-        member = member or ctx.author
-        row = await db.get_user(ctx.guild.id, member.id)
-        xp, level = row if row else (0, 0)
-
-        next_level = level + 1
-        current_level_xp = (level * 10) ** 2
-        next_level_xp = (next_level * 10) ** 2
-        xp_into_level = max(0, xp - current_level_xp)
-        xp_needed = max(1, next_level_xp - current_level_xp)
-        progress = xp_into_level / xp_needed
-
-        # create image
-        width, height = 700, 220
-        bg_color = (40, 42, 54)
-        img = Image.new("RGBA", (width, height), color=bg_color)
-        draw = ImageDraw.Draw(img)
-
-        # fonts
-        try:
-            font_title = ImageFont.truetype("arial.ttf", 28)
-            font_small = ImageFont.truetype("arial.ttf", 18)
-        except:
-            font_title = ImageFont.load_default()
-            font_small = ImageFont.load_default()
-
-        # avatar
-        avatar_size = 150
-        avatar_x, avatar_y = 30, (height - avatar_size) // 2
-
-        avatar_url = member.avatar.url if member.avatar else member.default_avatar.url
-
+        # Fetch avatar
+        avatar_bytes = None
+        avatar = member.display_avatar.url
         async with aiohttp.ClientSession() as session:
-            async with session.get(avatar_url) as resp:
+            async with session.get(avatar) as resp:
                 avatar_bytes = await resp.read()
 
-        avatar = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA").resize((avatar_size, avatar_size))
-        # circular mask
-        mask = Image.new("L", (avatar_size, avatar_size), 0)
-        mask_draw = ImageDraw.Draw(mask)
-        mask_draw.ellipse((0, 0, avatar_size, avatar_size), fill=255)
-        img.paste(avatar, (avatar_x, avatar_y), mask)
+        avatar_img = Image.open(BytesIO(avatar_bytes)).convert("RGBA").resize((200, 200))
+        background.paste(avatar_img, (25, 25), avatar_img)
 
-        # text
-        draw.text((200, 30), f"{member.display_name}", font=font_title, fill=(255,255,255))
-        draw.text((200, 75), f"Level: {level}", font=font_small, fill=(200,200,200))
-        draw.text((200, 100), f"XP: {xp} / {next_level_xp}", font=font_small, fill=(200,200,200))
+        # Fonts
+        try:
+            font_big = ImageFont.truetype(self.font_path, 40)
+            font_small = ImageFont.truetype(self.font_path, 24)
+        except Exception:
+            font_big = ImageFont.load_default()
+            font_small = ImageFont.load_default()
 
-        # progress bar
-        bar_x, bar_y, bar_w, bar_h = 200, 140, 450, 28
-        draw.rectangle([bar_x, bar_y, bar_x + bar_w, bar_y + bar_h], fill=(60,60,60))
-        fill_w = int(bar_w * progress)
-        draw.rectangle([bar_x, bar_y, bar_x + fill_w, bar_y + bar_h], fill=(0,170,255))
+        # Text
+        draw.text((250, 40), f"{member.display_name}", font=font_big, fill=(255,255,255,255))
+        draw.text((250, 90), f"Level: {level}  •  XP: {xp}", font=font_small, fill=(200,200,200,255))
 
-        # progress text
-        pct = int(progress * 100)
-        draw.text((bar_x + bar_w - 60, bar_y + 2), f"{pct}%", font=font_small, fill=(255,255,255))
+        # XP bar background
+        bar_x, bar_y = 250, 150
+        bar_w, bar_h = 500, 30
+        draw.rectangle((bar_x, bar_y, bar_x + bar_w, bar_y + bar_h), fill=(60,60,60,255))
 
-        with io.BytesIO() as image_binary:
-            img.save(image_binary, "PNG")
-            image_binary.seek(0)
-            file = discord.File(fp=image_binary, filename="profile.png")
-            await ctx.send(file=file)
+        # Suppose next level at (level+1)^2 * 100 (reverse of xp_to_level) - we'll just show progress fraction:
+        # For simplicity compute progress with a simple formula:
+        # Level base xp = ((level/10)**2)*100 and next = (((level+1)/10)**2)*100
+        def level_xp(l):
+            return int(((l / 10) ** 2) * 100)
+        base = level_xp(level)
+        nxt = level_xp(level + 1) if level+1 > level else base + 100
+        if nxt <= base:
+            nxt = base + 100
+        progress = max(0, min(1.0, (xp - base) / (nxt - base)))
+        filled = int(bar_w * progress)
+        draw.rectangle((bar_x, bar_y, bar_x + filled, bar_y + bar_h), fill=(0, 200, 100, 255))
+
+        # Return bytes
+        out = BytesIO()
+        background.save(out, format="PNG")
+        out.seek(0)
+        return out
+
+    # --------- Prefix command
+    @commands.command(name="level", aliases=["lvl", "rank"])
+    async def level_prefix(self, ctx, member: discord.Member = None):
+        member = member or ctx.author
+        xp = await self.bot.db.get_user(member.id, ctx.guild.id)
+        level = self.bot.db.xp_to_level(xp)
+        # generate image
+        card = await self.make_profile_card(member, xp, level)
+        await ctx.reply(file=discord.File(card, filename="profile.png"))
+
+    # --------- Slash command
+    @app_commands.command(name="level", description="Show a user's level and XP")
+    @app_commands.describe(user="User to show (optional)")
+    async def level(self, interaction: discord.Interaction, user: discord.Member = None):
+        await interaction.response.defer()
+        user = user or interaction.user
+        xp = await self.bot.db.get_user(user.id, interaction.guild.id)
+        level = self.bot.db.xp_to_level(xp)
+        card = await self.make_profile_card(user, xp, level)
+        await interaction.followup.send(file=discord.File(card, filename="profile.png"))
+
+    # Leaderboard (prefix)
+    @commands.command(name="leaderboard", aliases=["lb"])
+    async def leaderboard_prefix(self, ctx, limit: int = 10):
+        limit = max(1, min(25, limit))
+        rows = await self.bot.db.get_leaderboard(ctx.guild.id, limit)
+        embed = discord.Embed(title=f"🏆 Leaderboard — Top {limit}", color=discord.Color.blurple())
+        desc = ""
+        for idx, (user_id, xp) in enumerate(rows, start=1):
+            member = ctx.guild.get_member(user_id)
+            name = member.display_name if member else f"<Left user {user_id}>"
+            level = self.bot.db.xp_to_level(xp)
+            desc += f"**{idx}.** {name} — Level {level} • {xp} XP\n"
+        if desc == "":
+            desc = "No data yet."
+        embed.description = desc
+        await ctx.send(embed=embed)
+
+    # Leaderboard (slash)
+    @app_commands.command(name="leaderboard", description="Show the server leaderboard")
+    @app_commands.describe(limit="Number of top users to show (max 25)")
+    async def leaderboard(self, interaction: discord.Interaction, limit: int = 10):
+        await interaction.response.defer()
+        limit = max(1, min(25, limit))
+        rows = await self.bot.db.get_leaderboard(interaction.guild.id, limit)
+        embed = discord.Embed(title=f"🏆 Leaderboard — Top {limit}", color=discord.Color.blurple())
+        desc = ""
+        for idx, (user_id, xp) in enumerate(rows, start=1):
+            member = interaction.guild.get_member(user_id)
+            name = member.display_name if member else f"<Left user {user_id}>"
+            level = self.bot.db.xp_to_level(xp)
+            desc += f"**{idx}.** {name} — Level {level} • {xp} XP\n"
+        if desc == "":
+            desc = "No data yet."
+        embed.description = desc
+        await interaction.followup.send(embed=embed)
 
 async def setup(bot):
     await bot.add_cog(Levels(bot))
