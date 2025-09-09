@@ -23,6 +23,14 @@ class Mod(commands.Cog):
         await member.ban(reason=reason, delete_message_days=days)
         await ctx.send(f"✅ Banned {member.mention} • {reason}")
 
+    # ------------------- Prefix Mute -------------------
+    @commands.command(name="mute")
+    @has_permissions(manage_roles=True)
+    async def mute(self, ctx, member: discord.Member, duration: int, *, reason: str = "No reason provided"):
+        """Mute a member for a given duration in minutes"""
+        await self.mute_member(ctx.guild, member, duration*60, reason)
+        await ctx.send(f"🔇 Muted {member.mention} for {duration} minutes. Reason: {reason}")
+
     # ------------------- Mute Helper -------------------
     async def mute_member(self, guild, member: discord.Member, duration_seconds: int, reason: str):
         role = discord.utils.get(guild.roles, name="Muted")
