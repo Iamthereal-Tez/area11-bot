@@ -10,10 +10,13 @@ intents.members = True
 intents.reactions = True
 intents.voice_states = True
 
-# Prefix (you can make this per-guild later)
+# Prefix bot (you can keep legacy commands for now)
 BOT_PREFIX = "."
 
 bot = commands.Bot(command_prefix=BOT_PREFIX, intents=intents, help_command=commands.DefaultHelpCommand())
+
+# Slash command tree
+tree = bot.tree
 
 # Load cogs
 INITIAL_EXTENSIONS = [
@@ -25,6 +28,13 @@ INITIAL_EXTENSIONS = [
 async def on_ready():
     print(f"✅ Logged in as {bot.user} (ID: {bot.user.id})")
     print("Loaded cogs:", INITIAL_EXTENSIONS)
+
+    # Sync slash commands
+    try:
+        synced = await tree.sync()
+        print(f"✅ Synced {len(synced)} slash command(s).")
+    except Exception as e:
+        print(f"❌ Failed to sync commands: {e}")
 
 async def load_extensions():
     for ext in INITIAL_EXTENSIONS:
