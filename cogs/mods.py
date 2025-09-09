@@ -73,5 +73,14 @@ class Mod(commands.Cog):
         except discord.Forbidden:
             await ctx.send("I don't have permission to unmute this user.")
 
+class Mod(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+    # Example slash command
+    @app_commands.command(name="ping", description="Replies with pong!")
+    async def ping(self, interaction: discord.Interaction):
+        await interaction.response.send_message("🏓 Pong!")
+
 async def setup(bot):
     await bot.add_cog(Mod(bot))
