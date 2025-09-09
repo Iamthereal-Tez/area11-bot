@@ -122,7 +122,29 @@ class Database:
     def xp_to_level(xp: int) -> int:
         # A commonly used simple formula: level = int(sqrt(xp/100))
         # Adjust as you like. This uses sqrt scaling.
-        return int((xp / 100) ** 0.5 * 10)  # tuning factor (scale as needed)
+        return int((xp / 100) ** 0.5 * 10)  # tuning factor (scale as needed
+        
+# WARN table
+if self._using_pg:
+    async with self._pg_pool.acquire() as conn:
+        await conn.execute("""
+        CREATE TABLE IF NOT EXISTS warns (
+            guild_id BIGINT,
+            user_id BIGINT,
+            warns INTEGER DEFAULT 0,
+            PRIMARY KEY (guild_id, user_id)
+        );
+        """)
+else:
+    await self._sqlite_conn.execute("""
+    CREATE TABLE IF NOT EXISTS warns (
+        guild_id INTEGER,
+        user_id INTEGER,
+        warns INTEGER DEFAULT 0,
+        PRIMARY KEY (guild_id, user_id)
+    );
+    """)
+    await self._sqlite_conn.commit()
 
     async def close(self):
         if self._using_pg and self._pg_pool:
