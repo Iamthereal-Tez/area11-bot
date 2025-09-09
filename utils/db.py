@@ -117,6 +117,27 @@ class Database:
             async with self._sqlite_conn.execute("SELECT user_id, xp FROM xp WHERE guild_id = ? ORDER BY xp DESC LIMIT ?", (guild_id, limit)) as cur:
                 rows = await cur.fetchall()
                 return [(r[0], r[1]) for r in rows]
+# WARN table
+if self._using_pg:
+    async with self._pg_pool.acquire() as conn:
+        await conn.execute("""
+        CREATE TABLE IF NOT EXISTS warns (
+            guild_id BIGINT,
+            user_id BIGINT,
+            warns INTEGER DEFAULT 0,
+            PRIMARY KEY (guild_id, user_id)
+        );
+        """)
+else:
+    await self._sqlite_conn.execute("""
+    CREATE TABLE IF NOT EXISTS warns (
+        guild_id INTEGER,
+        user_id INTEGER,
+        warns INTEGER DEFAULT 0,
+        PRIMARY KEY (guild_id, user_id)
+    );
+    """)
+    await self._sqlite_conn.commit()
 
     @staticmethod
     def xp_to_level(xp: int) -> int:
