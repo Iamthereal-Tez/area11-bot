@@ -5,7 +5,6 @@ import discord
 from discord.ext import commands
 from utils.db import Database
 
-# Intents
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -21,7 +20,11 @@ tree = bot.tree
 INITIAL_EXTENSIONS = [
     "cogs.levels",
     "cogs.mod",
-    "cogs.misc"
+    "cogs.misc",
+    "cogs.economy",
+    "cogs.giveaways",
+    "cogs.starboard",
+    "cogs.welcome"
 ]
 
 # Basic anti-spam/XP cooldown tracker (per user per guild)
@@ -34,7 +37,6 @@ XP_COOLDOWN = 60  # seconds between XP awards for same user/guild
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user} (ID: {bot.user.id})")
-    # create / sync commands
     try:
         synced = await tree.sync()
         print(f"✅ Synced {len(synced)} slash command(s).")
@@ -43,20 +45,18 @@ async def on_ready():
 
 @bot.event
 async def on_connect():
-    # initialize DB on connect
     if not hasattr(bot, "db"):
         bot.db = Database()
         await bot.db.connect()
         await bot.db.create_tables()
-    print("🔗 Database connected (if available).")
+    print("🔗 Database connected.")
 
 @bot.event
 async def on_message(message: discord.Message):
-    # ignore bots
     if message.author.bot or message.guild is None:
         return
 
-    # award XP with cooldown
+    # XP cooldown
     key = (message.guild.id, message.author.id)
     now = time.time()
     last = _message_cooldowns.get(key, 0)
@@ -67,7 +67,6 @@ async def on_message(message: discord.Message):
             print("DB XP add error:", e)
         _message_cooldowns[key] = now
 
-    # process commands (prefix)
     await bot.process_commands(message)
 
 async def load_extensions():
@@ -80,7 +79,6 @@ async def load_extensions():
 
 async def main():
     await load_extensions()
-    # ensure DB initialized (again) and tables are present
     if not hasattr(bot, "db"):
         bot.db = Database()
         await bot.db.connect()
@@ -88,7 +86,7 @@ async def main():
 
     TOKEN = os.getenv("DISCORD_TOKEN")
     if not TOKEN:
-        raise RuntimeError("DISCORD_TOKEN environment variable not found. Add it in Railway Variables.")
+        raise RuntimeError("DISCORD_TOKEN not found in environment.")
     await bot.start(TOKEN)
 
 if __name__ == "__main__":
