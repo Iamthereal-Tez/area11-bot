@@ -1,86 +1,90 @@
 import discord
+from discord import app_commands
 from discord.ext import commands
-from datetime import datetime, timezone, timedelta
+from discord.ext.commands import has_permissions, MissingPermissions
 
 class Mod(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command()
-    @commands.has_permissions(ban_members=True)
-    async def ban(self, ctx, member: discord.Member, *, reason: str = None):
-        try:
-            await member.ban(reason=reason)
-            await ctx.send(f"🔨 {member.mention} banned. Reason: {reason or 'No reason provided.'}")
-            try:
-                await member.send(f"You were banned from {ctx.guild.name}. Reason: {reason or 'No reason provided.'}")
-            except discord.Forbidden:
-                pass
-        except discord.Forbidden:
-            await ctx.send("I don't have permission to ban this user.")
+    # -------------- Kick (prefix)
+    @commands.command(name="kick")
+    @has_permissions(kick_members=True)
+    async def kick(self, ctx, member: discord.Member, *, reason: str = "No reason provided"):
+        await member.kick(reason=reason)
+        await ctx.send(f"✅ Kicked {member.mention} • {reason}")
 
-    @commands.command()
-    @commands.has_permissions(kick_members=True)
-    async def kick(self, ctx, member: discord.Member, *, reason: str = None):
-        try:
-            await member.kick(reason=reason)
-            await ctx.send(f"👢 {member.mention} kicked. Reason: {reason or 'No reason provided.'}")
-            try:
-                await member.send(f"You were kicked from {ctx.guild.name}. Reason: {reason or 'No reason provided.'}")
-            except discord.Forbidden:
-                pass
-        except discord.Forbidden:
-            await ctx.send("I don't have permission to kick this user.")
+    # -------------- Ban (prefix)
+    @commands.command(name="ban")
+    @has_permissions(ban_members=True)
+    async def ban(self, ctx, member: discord.Member, days: int = 0, *, reason: str = "No reason provided"):
+        await member.ban(reason=reason, delete_message_days=days)
+        await ctx.send(f"✅ Banned {member.mention} • {reason}")
 
-    @commands.command()
-    @commands.has_permissions(moderate_members=True)
-    async def mute(self, ctx, member: discord.Member, duration: str, *, reason: str = None):
-        try:
-            unit = duration[-1].lower()
-            amount = int(duration[:-1])
-            if unit == "s":
-                delta = timedelta(seconds=amount)
-            elif unit == "m":
-                delta = timedelta(minutes=amount)
-            elif unit == "h":
-                delta = timedelta(hours=amount)
-            elif unit == "d":
-                delta = timedelta(days=amount)
-            else:
-                return await ctx.send("Invalid duration. Use e.g. `10m`, `2h`, `1d`.")
-            until = datetime.now(timezone.utc) + delta
-            await member.edit(timed_out_until=until)
-            await ctx.send(f"🔇 {member.mention} muted for {duration}. Reason: {reason or 'No reason provided.'}")
-            try:
-                await member.send(f"You were muted in {ctx.guild.name} for {duration}. Reason: {reason or 'No reason provided.'}")
-            except discord.Forbidden:
-                pass
-        except discord.Forbidden:
-            await ctx.send("I don't have permission to timeout this user.")
-        except Exception as e:
-            await ctx.send(f"Error: {e}")
+    # -------------- Slash Kick
+    @app_commands.command(name="kick", description="Kick a member")
+    @app_commands.checks.has_permissions(kick_members=True)
+    @app_commands.describe(member="Member to kick", reason="Reason")
+    async def kick_slash(self, interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
+        await interaction.response.defer()
+        await member.kick(reason=reason)
+        await interaction.followup.send(f"✅ Kicked {member.mention} • {reason}")
 
-    @commands.command()
-    @commands.has_permissions(moderate_members=True)
-    async def unmute(self, ctx, member: discord.Member):
-        try:
-            await member.edit(timed_out_until=None)
-            await ctx.send(f"🔊 {member.mention} unmuted.")
-            try:
-                await member.send(f"You were unmuted in {ctx.guild.name}.")
-            except discord.Forbidden:
-                pass
-        except discord.Forbidden:
-            await ctx.send("I don't have permission to unmute this user.")
+    # -------------- Slash Ban
+    @app_commands.command(name="ban", description="Ban a member")
+    @app_commands.checks.has_permissions(ban_members=True)
+    @app_commands.describe(member="Member to ban", days="Delete last X days of messages", reason="Reason")
+    async def ban_slash(self, interaction: discord.Interaction, member: discord.Member, days: int = 0, reason: str = "No reason provided"):
+        await interaction.response.defer()
+        await member.ban(reason=reason, delete_message_days=days)
+        await interaction.followup.send(f"✅ Banned {member.mention} • {reason}")
 
-class Mod(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
+    # -------------- Mute (simple role-based mute)
+    @commands.command(name="mute")
+    @has_permissions(manage_roles=True)
+    async def mute(self, ctx, member: discord.Member, *, reason: str = "No reason provided"):
+        role = discord.utils.get(ctx.guild.roles, name="Muted")
+        if role is None:
+            # create muted role
+            role = await ctx.guild.create_role(name="Muted", reason="Auto-created by bot for mute command")
+            for ch in ctx.guild.channels:
+                try:
+                    await ch.set_permissions(role, send_messages=False, speak=False, add_reactions=False)
+                except Exception:
+                    pass
+        await member.add_roles(role, reason=reason)
+        await ctx.send(f"🔇 Muted {member.mention} • {reason}")
 
-    # Example slash command
-    @app_commands.command(name="ping", description="Replies with pong!")
-    async def ping(self, interaction: discord.Interaction):
-        await interaction.response.send_message("🏓 Pong!")
+    @app_commands.command(name="mute", description="Mute a member (creates Muted role if needed)")
+    @app_commands.checks.has_permissions(manage_roles=True)
+    async def mute_slash(self, interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
+        await interaction.response.defer()
+        role = discord.utils.get(interaction.guild.roles, name="Muted")
+        if role is None:
+            role = await interaction.guild.create_role(name="Muted", reason="Auto-created by bot for mute command")
+            for ch in interaction.guild.channels:
+                try:
+                    await ch.set_permissions(role, send_messages=False, speak=False, add_reactions=False)
+                except Exception:
+                    pass
+        await member.add_roles(role, reason=reason)
+        await interaction.followup.send(f"🔇 Muted {member.mention} • {reason}")
+
+    # Error handlers
+    @kick.error
+    @ban.error
+    @mute.error
+    async def perm_error(self, ctx, error):
+        if isinstance(error, MissingPermissions):
+            await ctx.send("❌ You don't have permission to use this command.")
+        else:
+            await ctx.send(f"❌ Error: {error}")
+
+    @kick_slash.error
+    @ban_slash.error
+    @mute_slash.error
+    async def slash_perm_error(self, interaction: discord.Interaction, error):
+        await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(Mod(bot))
