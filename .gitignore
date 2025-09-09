@@ -1,8 +1,5 @@
-# Ignore database
 *.db
-
-# Ignore virtual environment
-venv/
-
-# Ignore secrets
 .env
+venv/
+__pycache__/
+*.pyc
