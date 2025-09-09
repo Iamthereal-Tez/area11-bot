@@ -1,3 +1,4 @@
+# cogs/mod.py
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
@@ -22,7 +23,7 @@ class Mod(commands.Cog):
         await member.ban(reason=reason, delete_message_days=days)
         await ctx.send(f"✅ Banned {member.mention} • {reason}")
 
-    # ------------------- Mute -------------------
+    # ------------------- Mute Helper -------------------
     async def mute_member(self, guild, member: discord.Member, duration_seconds: int, reason: str):
         role = discord.utils.get(guild.roles, name="Muted")
         if role is None:
@@ -33,7 +34,10 @@ class Mod(commands.Cog):
                 except Exception:
                     pass
         await member.add_roles(role, reason=reason)
-        await member.send(f"🔇 You have been muted in **{guild.name}** for {duration_seconds // 60} minutes. Reason: {reason}")
+        try:
+            await member.send(f"🔇 You have been muted in **{guild.name}** for {duration_seconds//60} minutes. Reason: {reason}")
+        except:
+            pass
         await asyncio.sleep(duration_seconds)
         # Remove role after duration
         await member.remove_roles(role, reason="Mute duration expired")
@@ -45,15 +49,14 @@ class Mod(commands.Cog):
         db = self.bot.db
         warns = await db.add_warn(member.id, ctx.guild.id)
 
-        # Actions based on warn count
         msg = f"⚠️ {member.mention} has been warned. Reason: {reason} (Warn {warns}/6)"
         await ctx.send(msg)
-
         try:
             await member.send(f"⚠️ You have been warned in **{ctx.guild.name}**. Reason: {reason} (Warn {warns}/6)")
         except:
-            pass  # ignore if DMs are off
+            pass
 
+        # Actions based on warn count
         if warns == 3:
             await self.mute_member(ctx.guild, member, duration_seconds=3600, reason="3rd warn")
         elif warns == 4:
@@ -105,6 +108,30 @@ class Mod(commands.Cog):
     @warn_slash.error
     async def slash_perm_error(self, interaction: discord.Interaction, error):
         await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
+
+    @app_commands.command(name="mute", description="Mute a member for a duration (in minutes)")
+    @app_commands.checks.has_permissions(manage_roles=True)
+    @app_commands.describe(member="Member to mute", duration="Duration in minutes", reason="Reason")
+    async def mute_slash(self, interaction: discord.Interaction, member: discord.Member, duration: int, reason: str = "No reason provided"):
+        await interaction.response.defer()
+        await self.mute_member(interaction.guild, member, duration_seconds=duration*60, reason=reason)
+        await interaction.followup.send(f"🔇 Muted {member.mention} for {duration} minutes. Reason: {reason}")
+
+    @app_commands.command(name="kick", description="Kick a member")
+    @app_commands.checks.has_permissions(kick_members=True)
+    @app_commands.describe(member="Member to kick", reason="Reason")
+    async def kick_slash(self, interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
+        await interaction.response.defer()
+        await member.kick(reason=reason)
+        await interaction.followup.send(f"✅ Kicked {member.mention} • {reason}")
+
+    @app_commands.command(name="ban", description="Ban a member")
+    @app_commands.checks.has_permissions(ban_members=True)
+    @app_commands.describe(member="Member to ban", days="Delete last X days of messages", reason="Reason")
+    async def ban_slash(self, interaction: discord.Interaction, member: discord.Member, days: int = 0, reason: str = "No reason provided"):
+        await interaction.response.defer()
+        await member.ban(reason=reason, delete_message_days=days)
+        await interaction.followup.send(f"✅ Banned {member.mention} • {reason}")
 
 async def setup(bot):
     await bot.add_cog(Mod(bot))
