@@ -2,7 +2,6 @@ import os
 import discord
 from discord.ext import commands
 import asyncio
-from keep_alive import keep_alive
 
 # Intents
 intents = discord.Intents.default()
@@ -36,13 +35,10 @@ async def load_extensions():
             print(f"Failed to load extension {ext}: {e}")
 
 if __name__ == "__main__":
-    # Start keep-alive (for Replit + UptimeRobot)
-    keep_alive()
-
     loop = asyncio.get_event_loop()
     loop.run_until_complete(load_extensions())
 
     TOKEN = os.getenv("DISCORD_TOKEN")
     if not TOKEN:
-        raise RuntimeError("DISCORD_TOKEN environment variable not found. Add it in Replit secrets.")
+        raise RuntimeError("❌ DISCORD_TOKEN environment variable not found. Add it in Railway Variables.")
     bot.run(TOKEN)
