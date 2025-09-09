@@ -124,27 +124,48 @@ class Database:
         # Adjust as you like. This uses sqrt scaling.
         return int((xp / 100) ** 0.5 * 10)  # tuning factor (scale as needed
         
-# WARN table
-if self._using_pg:
-    async with self._pg_pool.acquire() as conn:
-        await conn.execute("""
-        CREATE TABLE IF NOT EXISTS warns (
-            guild_id BIGINT,
-            user_id BIGINT,
-            warns INTEGER DEFAULT 0,
-            PRIMARY KEY (guild_id, user_id)
-        );
-        """)
-else:
-    await self._sqlite_conn.execute("""
-    CREATE TABLE IF NOT EXISTS warns (
-        guild_id INTEGER,
-        user_id INTEGER,
-        warns INTEGER DEFAULT 0,
-        PRIMARY KEY (guild_id, user_id)
-    );
-    """)
-    await self._sqlite_conn.commit()
+# WARN helpers
+async def add_warn(self, user_id: int, guild_id: int):
+    """Add a warn to a user and return total warns."""
+    if self._using_pg:
+        async with self._pg_pool.acquire() as conn:
+            await conn.execute("""
+            INSERT INTO warns (guild_id, user_id, warns) VALUES ($1, $2, 1)
+            ON CONFLICT (guild_id, user_id) DO UPDATE SET warns = warns + 1;
+            """, guild_id, user_id)
+            row = await conn.fetchrow("SELECT warns FROM warns WHERE guild_id=$1 AND user_id=$2", guild_id, user_id)
+            return row["warns"]
+    else:
+        async with self._sqlite_conn.execute("SELECT warns FROM warns WHERE guild_id=? AND user_id=?", (guild_id, user_id)) as cur:
+            row = await cur.fetchone()
+        if row is None:
+            await self._sqlite_conn.execute("INSERT INTO warns (guild_id, user_id, warns) VALUES (?, ?, ?)", (guild_id, user_id, 1))
+            await self._sqlite_conn.commit()
+            return 1
+        else:
+            new_warns = row[0] + 1
+            await self._sqlite_conn.execute("UPDATE warns SET warns=? WHERE guild_id=? AND user_id=?", (new_warns, guild_id, user_id))
+            await self._sqlite_conn.commit()
+            return new_warns
+
+async def get_warns(self, user_id: int, guild_id: int):
+    if self._using_pg:
+        async with self._pg_pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT warns FROM warns WHERE guild_id=$1 AND user_id=$2", guild_id, user_id)
+            return row["warns"] if row else 0
+    else:
+        async with self._sqlite_conn.execute("SELECT warns FROM warns WHERE guild_id=? AND user_id=?", (guild_id, user_id)) as cur:
+            row = await cur.fetchone()
+            return row[0] if row else 0
+
+async def reset_warns(self, user_id: int, guild_id: int):
+    if self._using_pg:
+        async with self._pg_pool.acquire() as conn:
+            await conn.execute("DELETE FROM warns WHERE guild_id=$1 AND user_id=$2", guild_id, user_id)
+    else:
+        await self._sqlite_conn.execute("DELETE FROM warns WHERE guild_id=? AND user_id=?", (guild_id, user_id))
+        await self._sqlite_conn.commit()
+
 
     async def close(self):
         if self._using_pg and self._pg_pool:
