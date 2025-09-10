@@ -1,9 +1,10 @@
-# cogs/mod.py
+# cogs/mods.py
 import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext.commands import has_permissions, MissingPermissions
 import asyncio
+import datetime
 
 class Mod(commands.Cog):
     def __init__(self, bot):
@@ -13,45 +14,133 @@ class Mod(commands.Cog):
     @commands.command(name="kick")
     @has_permissions(kick_members=True)
     async def kick(self, ctx, member: discord.Member, *, reason: str = "No reason provided"):
-        await member.kick(reason=reason)
-        await ctx.send(f"✅ Kicked {member.mention} • {reason}")
+        # Check if bot has permission
+        if not ctx.guild.me.guild_permissions.kick_members:
+            await ctx.send("❌ I don't have permission to kick members.")
+            return
+            
+        # Check if target is higher in hierarchy
+        if member.top_role >= ctx.guild.me.top_role:
+            await ctx.send("❌ I can't kick this user because their role is higher than or equal to mine.")
+            return
+            
+        try:
+            await member.kick(reason=reason)
+            await ctx.send(f"✅ Kicked {member.mention} • {reason}")
+        except discord.Forbidden:
+            await ctx.send("❌ I don't have permission to kick this user.")
+        except Exception as e:
+            await ctx.send(f"❌ Error: {e}")
 
     # ------------------- Ban -------------------
     @commands.command(name="ban")
     @has_permissions(ban_members=True)
     async def ban(self, ctx, member: discord.Member, days: int = 0, *, reason: str = "No reason provided"):
-        await member.ban(reason=reason, delete_message_days=days)
-        await ctx.send(f"✅ Banned {member.mention} • {reason}")
+        # Check if bot has permission
+        if not ctx.guild.me.guild_permissions.ban_members:
+            await ctx.send("❌ I don't have permission to ban members.")
+            return
+            
+        # Check if target is higher in hierarchy
+        if member.top_role >= ctx.guild.me.top_role:
+            await ctx.send("❌ I can't ban this user because their role is higher than or equal to mine.")
+            return
+            
+        try:
+            await member.ban(reason=reason, delete_message_days=days)
+            await ctx.send(f"✅ Banned {member.mention} • {reason}")
+        except discord.Forbidden:
+            await ctx.send("❌ I don't have permission to ban this user.")
+        except Exception as e:
+            await ctx.send(f"❌ Error: {e}")
 
-    # ------------------- Mute -------------------
+    # ------------------- Mute System -------------------
     async def mute_member(self, guild, member: discord.Member, duration_seconds: int, reason: str):
+        # Check if bot has permission to manage roles
+        if not guild.me.guild_permissions.manage_roles:
+            return  # Can't proceed without this permission
+            
+        # Try to use timeout feature first (Discord.py 2.0+)
+        try:
+            timeout_until = discord.utils.utcnow() + datetime.timedelta(seconds=duration_seconds)
+            await member.timeout(timeout_until, reason=reason)
+            print(f"✅ Timeout applied to {member} for {duration_seconds} seconds")
+            return
+        except (AttributeError, discord.Forbidden):
+            pass  # Fall back to role-based mute
+        
+        # Role-based mute fallback
         role = discord.utils.get(guild.roles, name="Muted")
         if role is None:
-            role = await guild.create_role(name="Muted", reason="Auto-created for mute")
-            for ch in guild.channels:
-                try:
-                    await ch.set_permissions(role, send_messages=False, speak=False, add_reactions=False)
-                except:
-                    pass
-        await member.add_roles(role, reason=reason)
+            # Create muted role if it doesn't exist
+            try:
+                role = await guild.create_role(name="Muted", reason="Auto-created for mute")
+                
+                # Apply permissions to all channels
+                for channel in guild.channels:
+                    try:
+                        await channel.set_permissions(role, 
+                                                    send_messages=False, 
+                                                    speak=False, 
+                                                    add_reactions=False,
+                                                    read_message_history=True)
+                    except discord.Forbidden:
+                        continue  # Skip if we don't have permission for this channel
+            except discord.Forbidden:
+                return  # Can't create role
+        
+        # Add the role to the member
         try:
-            await member.send(f"🔇 You have been muted in **{guild.name}** for {duration_seconds//60} minutes. Reason: {reason}")
-        except:
-            pass
-        await asyncio.sleep(duration_seconds)
-        await member.remove_roles(role, reason="Mute duration expired")
+            await member.add_roles(role, reason=reason)
+            
+            # Set a timer to remove the role
+            await asyncio.sleep(duration_seconds)
+            if role in member.roles:
+                await member.remove_roles(role, reason="Mute duration expired")
+                
+        except discord.Forbidden:
+            pass  # Can't add role to member
 
     @commands.command(name="mute")
     @has_permissions(manage_roles=True)
-    async def mute(self, ctx, member: discord.Member, duration: int, *, reason: str = "No reason provided"):
-        """Mute a member for X minutes"""
-        await self.mute_member(ctx.guild, member, duration*60, reason)
-        await ctx.send(f"🔇 Muted {member.mention} for {duration} minutes. Reason: {reason}")
+    async def mute(self, ctx, member: discord.Member, duration: str, *, reason: str = "No reason provided"):
+        """Mute a member for X minutes (e.g., 10m, 1h, 2d)"""
+        # Parse duration
+        try:
+            if duration.endswith('m'):
+                minutes = int(duration[:-1])
+            elif duration.endswith('h'):
+                minutes = int(duration[:-1]) * 60
+            elif duration.endswith('d'):
+                minutes = int(duration[:-1]) * 1440
+            else:
+                minutes = int(duration)  # Assume minutes if no suffix
+        except ValueError:
+            await ctx.send("❌ Invalid duration format. Use like: 10m, 1h, 2d")
+            return
+            
+        # Check if bot has permission
+        if not ctx.guild.me.guild_permissions.moderate_members and not ctx.guild.me.guild_permissions.manage_roles:
+            await ctx.send("❌ I don't have permission to mute members.")
+            return
+            
+        # Check if target is higher in hierarchy
+        if member.top_role >= ctx.guild.me.top_role:
+            await ctx.send("❌ I can't mute this user because their role is higher than or equal to mine.")
+            return
+            
+        await self.mute_member(ctx.guild, member, minutes*60, reason)
+        await ctx.send(f"🔇 Muted {member.mention} for {duration}. Reason: {reason}")
 
     # ------------------- Warn System -------------------
     @commands.command(name="warn")
     @has_permissions(manage_messages=True)
     async def warn(self, ctx, member: discord.Member, *, reason: str = "No reason provided"):
+        # Check if target is higher in hierarchy
+        if member.top_role >= ctx.guild.me.top_role:
+            await ctx.send("❌ I can't warn this user because their role is higher than or equal to mine.")
+            return
+            
         db = self.bot.db
         warns = await db.add_warn(member.id, ctx.guild.id)
 
@@ -68,11 +157,17 @@ class Mod(commands.Cog):
         elif warns == 4:
             await self.mute_member(ctx.guild, member, 86400, "4th warn")
         elif warns == 5:
-            await member.kick(reason="5th warn")
-            await ctx.send(f"✅ {member.mention} kicked due to 5 warns.")
+            try:
+                await member.kick(reason="5th warn")
+                await ctx.send(f"✅ {member.mention} kicked due to 5 warns.")
+            except discord.Forbidden:
+                await ctx.send("❌ I don't have permission to kick this user.")
         elif warns >= 6:
-            await member.ban(reason="6th warn")
-            await ctx.send(f"⛔ {member.mention} banned due to 6 warns.")
+            try:
+                await member.ban(reason="6th warn")
+                await ctx.send(f"⛔ {member.mention} banned due to 6 warns.")
+            except discord.Forbidden:
+                await ctx.send("❌ I don't have permission to ban this user.")
 
     # ------------------- Error Handlers -------------------
     @kick.error
@@ -91,6 +186,12 @@ class Mod(commands.Cog):
     @app_commands.describe(member="Member to warn", reason="Reason")
     async def warn_slash(self, interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
         await interaction.response.defer()
+        
+        # Check if target is higher in hierarchy
+        if member.top_role >= interaction.guild.me.top_role:
+            await interaction.followup.send("❌ I can't warn this user because their role is higher than or equal to mine.")
+            return
+            
         db = self.bot.db
         warns = await db.add_warn(member.id, interaction.guild.id)
 
@@ -107,39 +208,98 @@ class Mod(commands.Cog):
         elif warns == 4:
             await self.mute_member(interaction.guild, member, 86400, "4th warn")
         elif warns == 5:
-            await member.kick(reason="5th warn")
-            await interaction.followup.send(f"✅ {member.mention} kicked due to 5 warns.")
+            try:
+                await member.kick(reason="5th warn")
+                await interaction.followup.send(f"✅ {member.mention} kicked due to 5 warns.")
+            except discord.Forbidden:
+                await interaction.followup.send("❌ I don't have permission to kick this user.")
         elif warns >= 6:
-            await member.ban(reason="6th warn")
-            await interaction.followup.send(f"⛔ {member.mention} banned due to 6 warns.")
+            try:
+                await member.ban(reason="6th warn")
+                await interaction.followup.send(f"⛔ {member.mention} banned due to 6 warns.")
+            except discord.Forbidden:
+                await interaction.followup.send("❌ I don't have permission to ban this user.")
 
     @warn_slash.error
     async def slash_perm_error(self, interaction: discord.Interaction, error):
         await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
 
-    @app_commands.command(name="mute", description="Mute a member for a duration (minutes)")
+    @app_commands.command(name="mute", description="Mute a member for a duration (e.g., 10m, 1h, 2d)")
     @app_commands.checks.has_permissions(manage_roles=True)
-    @app_commands.describe(member="Member to mute", duration="Minutes", reason="Reason")
-    async def mute_slash(self, interaction: discord.Interaction, member: discord.Member, duration: int, reason: str = "No reason provided"):
+    @app_commands.describe(member="Member to mute", duration="Duration (e.g., 10m, 1h, 2d)", reason="Reason")
+    async def mute_slash(self, interaction: discord.Interaction, member: discord.Member, duration: str, reason: str = "No reason provided"):
         await interaction.response.defer()
-        await self.mute_member(interaction.guild, member, duration*60, reason)
-        await interaction.followup.send(f"🔇 Muted {member.mention} for {duration} minutes. Reason: {reason}")
+        
+        # Parse duration
+        try:
+            if duration.endswith('m'):
+                minutes = int(duration[:-1])
+            elif duration.endswith('h'):
+                minutes = int(duration[:-1]) * 60
+            elif duration.endswith('d'):
+                minutes = int(duration[:-1]) * 1440
+            else:
+                minutes = int(duration)  # Assume minutes if no suffix
+        except ValueError:
+            await interaction.followup.send("❌ Invalid duration format. Use like: 10m, 1h, 2d")
+            return
+            
+        # Check if bot has permission
+        if not interaction.guild.me.guild_permissions.moderate_members and not interaction.guild.me.guild_permissions.manage_roles:
+            await interaction.followup.send("❌ I don't have permission to mute members.")
+            return
+            
+        # Check if target is higher in hierarchy
+        if member.top_role >= interaction.guild.me.top_role:
+            await interaction.followup.send("❌ I can't mute this user because their role is higher than or equal to mine.")
+            return
+            
+        await self.mute_member(interaction.guild, member, minutes*60, reason)
+        await interaction.followup.send(f"🔇 Muted {member.mention} for {duration}. Reason: {reason}")
 
     @app_commands.command(name="kick", description="Kick a member")
     @app_commands.checks.has_permissions(kick_members=True)
     @app_commands.describe(member="Member to kick", reason="Reason")
     async def kick_slash(self, interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
         await interaction.response.defer()
-        await member.kick(reason=reason)
-        await interaction.followup.send(f"✅ Kicked {member.mention} • {reason}")
+        
+        # Check if bot has permission
+        if not interaction.guild.me.guild_permissions.kick_members:
+            await interaction.followup.send("❌ I don't have permission to kick members.")
+            return
+            
+        # Check if target is higher in hierarchy
+        if member.top_role >= interaction.guild.me.top_role:
+            await interaction.followup.send("❌ I can't kick this user because their role is higher than or equal to mine.")
+            return
+            
+        try:
+            await member.kick(reason=reason)
+            await interaction.followup.send(f"✅ Kicked {member.mention} • {reason}")
+        except discord.Forbidden:
+            await interaction.followup.send("❌ I don't have permission to kick this user.")
 
     @app_commands.command(name="ban", description="Ban a member")
     @app_commands.checks.has_permissions(ban_members=True)
     @app_commands.describe(member="Member to ban", days="Delete last X days of messages", reason="Reason")
     async def ban_slash(self, interaction: discord.Interaction, member: discord.Member, days: int = 0, reason: str = "No reason provided"):
         await interaction.response.defer()
-        await member.ban(reason=reason, delete_message_days=days)
-        await interaction.followup.send(f"✅ Banned {member.mention} • {reason}")
+        
+        # Check if bot has permission
+        if not interaction.guild.me.guild_permissions.ban_members:
+            await interaction.followup.send("❌ I don't have permission to ban members.")
+            return
+            
+        # Check if target is higher in hierarchy
+        if member.top_role >= interaction.guild.me.top_role:
+            await interaction.followup.send("❌ I can't ban this user because their role is higher than or equal to mine.")
+            return
+            
+        try:
+            await member.ban(reason=reason, delete_message_days=days)
+            await interaction.followup.send(f"✅ Banned {member.mention} • {reason}")
+        except discord.Forbidden:
+            await interaction.followup.send("❌ I don't have permission to ban this user.")
 
 async def setup(bot):
     await bot.add_cog(Mod(bot))
