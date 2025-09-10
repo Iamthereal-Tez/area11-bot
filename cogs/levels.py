@@ -1,3 +1,4 @@
+# cogs/levels.py
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -39,9 +40,15 @@ class Levels(commands.Cog):
             # If avatar fails, just continue without it
             pass
 
-        # Text
-        draw.text((250, 40), f"{member.display_name}", font=self.font, fill=(255,255,255,255))
-        draw.text((250, 90), f"Level: {level}  •  XP: {xp}", font=self.small_font, fill=(200,200,200,255))
+        # Text - handle special characters
+        try:
+            draw.text((250, 40), f"{member.display_name}", font=self.font, fill=(255,255,255,255))
+            draw.text((250, 90), f"Level: {level}  |  XP: {xp}", font=self.small_font, fill=(200,200,200,255))
+        except UnicodeEncodeError:
+            # Fallback for problematic characters
+            safe_name = member.display_name.encode('ascii', 'ignore').decode('ascii')
+            draw.text((250, 40), f"{safe_name}", font=self.font, fill=(255,255,255,255))
+            draw.text((250, 90), f"Level: {level}  |  XP: {xp}", font=self.small_font, fill=(200,200,200,255))
 
         # XP bar background
         bar_x, bar_y = 250, 150
@@ -61,7 +68,7 @@ class Levels(commands.Cog):
         return out
 
     # --------- Prefix command
-    @commands.command(name="level", aliases=["lvl", "rank"])
+    @commands.command(name="level", aliases=["lvl", "rank", "profile"])
     async def level_prefix(self, ctx, member: discord.Member = None):
         member = member or ctx.author
         try:
