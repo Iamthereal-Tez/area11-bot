@@ -81,11 +81,17 @@ async def on_message(message: discord.Message):
                 elif warns == 4:
                     await mod_cog.mute_member(message.guild, message.author, 86400, "4th warn (spam)")
                 elif warns == 5:
-                    await message.author.kick(reason="5th warn (spam)")
-                    await message.channel.send(f"✅ {message.author.mention} kicked due to 5 warns.")
+                    try:
+                        await message.author.kick(reason="5th warn (spam)")
+                        await message.channel.send(f"✅ {message.author.mention} kicked due to 5 warns.")
+                    except discord.Forbidden:
+                        await message.channel.send("❌ I don't have permission to kick this user.")
                 elif warns >= 6:
-                    await message.author.ban(reason="6th warn (spam)")
-                    await message.channel.send(f"⛔ {message.author.mention} banned due to 6 warns.")
+                    try:
+                        await message.author.ban(reason="6th warn (spam)")
+                        await message.channel.send(f"⛔ {message.author.mention} banned due to 6 warns.")
+                    except discord.Forbidden:
+                        await message.channel.send("❌ I don't have permission to ban this user.")
 
             _spam_tracker[key] = ("", 0)
         except Exception as e:
