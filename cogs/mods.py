@@ -65,7 +65,7 @@ class Mod(commands.Cog):
             timeout_until = discord.utils.utcnow() + datetime.timedelta(seconds=duration_seconds)
             await member.timeout(timeout_until, reason=reason)
             print(f"✅ Timeout applied to {member} for {duration_seconds} seconds")
-            return
+            return True
         except (AttributeError, discord.Forbidden):
             pass  # Fall back to role-based mute
         
@@ -87,19 +87,20 @@ class Mod(commands.Cog):
                     except discord.Forbidden:
                         continue  # Skip if we don't have permission for this channel
             except discord.Forbidden:
-                return  # Can't create role
+                return False  # Can't create role
         
         # Add the role to the member
         try:
             await member.add_roles(role, reason=reason)
             
             # Set a timer to remove the role
-            await asyncio.sleep(duration_seconds)
-            if role in member.roles:
-                await member.remove_roles(role, reason="Mute duration expired")
-                
+            if duration_seconds > 0:
+                await asyncio.sleep(duration_seconds)
+                if role in member.roles:
+                    await member.remove_roles(role, reason="Mute duration expired")
+            return True
         except discord.Forbidden:
-            pass  # Can't add role to member
+            return False  # Can't add role to member
 
     @commands.command(name="mute")
     @has_permissions(manage_roles=True)
@@ -129,8 +130,35 @@ class Mod(commands.Cog):
             await ctx.send("❌ I can't mute this user because their role is higher than or equal to mine.")
             return
             
-        await self.mute_member(ctx.guild, member, minutes*60, reason)
-        await ctx.send(f"🔇 Muted {member.mention} for {duration}. Reason: {reason}")
+        success = await self.mute_member(ctx.guild, member, minutes*60, reason)
+        if success:
+            await ctx.send(f"🔇 Muted {member.mention} for {duration}. Reason: {reason}")
+        else:
+            await ctx.send("❌ Failed to mute user. Check my permissions.")
+
+    # ------------------- Unmute -------------------
+    @commands.command(name="unmute")
+    @has_permissions(manage_roles=True)
+    async def unmute(self, ctx, member: discord.Member):
+        """Unmute a member"""
+        # Try to remove timeout first
+        try:
+            await member.timeout(None, reason="Manual unmute")
+            await ctx.send(f"✅ Removed timeout from {member.mention}")
+            return
+        except:
+            pass  # Fall back to role removal
+            
+        # Role-based unmute
+        role = discord.utils.get(ctx.guild.roles, name="Muted")
+        if role and role in member.roles:
+            try:
+                await member.remove_roles(role, reason="Manual unmute")
+                await ctx.send(f"✅ Unmuted {member.mention}")
+            except discord.Forbidden:
+                await ctx.send("❌ I don't have permission to unmute this user.")
+        else:
+            await ctx.send(f"❌ {member.mention} is not muted.")
 
     # ------------------- Warn System -------------------
     @commands.command(name="warn")
@@ -169,11 +197,39 @@ class Mod(commands.Cog):
             except discord.Forbidden:
                 await ctx.send("❌ I don't have permission to ban this user.")
 
+    # ------------------- List Warns -------------------
+    @commands.command(name="listwarns", aliases=["warns"])
+    @has_permissions(manage_messages=True)
+    async def listwarns(self, ctx, member: discord.Member):
+        """List warns for a member"""
+        warns = await self.bot.db.get_warns(member.id, ctx.guild.id)
+        embed = discord.Embed(title=f"Warns for {member.display_name}", color=discord.Color.orange())
+        embed.add_field(name="Total Warns", value=warns, inline=False)
+        
+        # Show warn actions
+        if warns >= 3:
+            action = "1-hour mute" if warns == 3 else "1-day mute" if warns == 4 else "Kick" if warns == 5 else "Ban"
+            embed.add_field(name="Next Action", value=action, inline=False)
+            
+        embed.set_thumbnail(url=member.display_avatar.url)
+        await ctx.send(embed=embed)
+
+    # ------------------- Clear Warns -------------------
+    @commands.command(name="clearwarns", aliases=["resetwarns"])
+    @has_permissions(manage_messages=True)
+    async def clearwarns(self, ctx, member: discord.Member):
+        """Clear all warns for a member"""
+        await self.bot.db.reset_warns(member.id, ctx.guild.id)
+        await ctx.send(f"✅ Cleared all warns for {member.mention}")
+
     # ------------------- Error Handlers -------------------
     @kick.error
     @ban.error
     @warn.error
     @mute.error
+    @unmute.error
+    @listwarns.error
+    @clearwarns.error
     async def perm_error(self, ctx, error):
         if isinstance(error, MissingPermissions):
             await ctx.send("❌ You don't have permission to use this command.")
@@ -254,8 +310,63 @@ class Mod(commands.Cog):
             await interaction.followup.send("❌ I can't mute this user because their role is higher than or equal to mine.")
             return
             
-        await self.mute_member(interaction.guild, member, minutes*60, reason)
-        await interaction.followup.send(f"🔇 Muted {member.mention} for {duration}. Reason: {reason}")
+        success = await self.mute_member(interaction.guild, member, minutes*60, reason)
+        if success:
+            await interaction.followup.send(f"🔇 Muted {member.mention} for {duration}. Reason: {reason}")
+        else:
+            await interaction.followup.send("❌ Failed to mute user. Check my permissions.")
+
+    @app_commands.command(name="unmute", description="Unmute a member")
+    @app_commands.checks.has_permissions(manage_roles=True)
+    @app_commands.describe(member="Member to unmute")
+    async def unmute_slash(self, interaction: discord.Interaction, member: discord.Member):
+        await interaction.response.defer()
+        
+        # Try to remove timeout first
+        try:
+            await member.timeout(None, reason="Manual unmute")
+            await interaction.followup.send(f"✅ Removed timeout from {member.mention}")
+            return
+        except:
+            pass  # Fall back to role removal
+            
+        # Role-based unmute
+        role = discord.utils.get(interaction.guild.roles, name="Muted")
+        if role and role in member.roles:
+            try:
+                await member.remove_roles(role, reason="Manual unmute")
+                await interaction.followup.send(f"✅ Unmuted {member.mention}")
+            except discord.Forbidden:
+                await interaction.followup.send("❌ I don't have permission to unmute this user.")
+        else:
+            await interaction.followup.send(f"❌ {member.mention} is not muted.")
+
+    @app_commands.command(name="listwarns", description="List warns for a member")
+    @app_commands.checks.has_permissions(manage_messages=True)
+    @app_commands.describe(member="Member to check")
+    async def listwarns_slash(self, interaction: discord.Interaction, member: discord.Member):
+        await interaction.response.defer()
+        
+        warns = await self.bot.db.get_warns(member.id, interaction.guild.id)
+        embed = discord.Embed(title=f"Warns for {member.display_name}", color=discord.Color.orange())
+        embed.add_field(name="Total Warns", value=warns, inline=False)
+        
+        # Show warn actions
+        if warns >= 3:
+            action = "1-hour mute" if warns == 3 else "1-day mute" if warns == 4 else "Kick" if warns == 5 else "Ban"
+            embed.add_field(name="Next Action", value=action, inline=False)
+            
+        embed.set_thumbnail(url=member.display_avatar.url)
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="clearwarns", description="Clear all warns for a member")
+    @app_commands.checks.has_permissions(manage_messages=True)
+    @app_commands.describe(member="Member to clear warns for")
+    async def clearwarns_slash(self, interaction: discord.Interaction, member: discord.Member):
+        await interaction.response.defer()
+        
+        await self.bot.db.reset_warns(member.id, interaction.guild.id)
+        await interaction.followup.send(f"✅ Cleared all warns for {member.mention}")
 
     @app_commands.command(name="kick", description="Kick a member")
     @app_commands.checks.has_permissions(kick_members=True)
