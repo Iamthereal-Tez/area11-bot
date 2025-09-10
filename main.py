@@ -10,10 +10,11 @@ intents.members = True
 intents.reactions = True
 
 BOT_PREFIX = "."
-bot = commands.Bot(command_prefix=BOT_PREFIX, intents=intents, help_command=commands.DefaultHelpCommand())
+bot = commands.Bot(command_prefix=BOT_PREFIX, intents=intents, help_command=None)
 tree = bot.tree
 
-INITIAL_EXTENSIONS = ["cogs.mod"]
+# Load all cogs
+INITIAL_EXTENSIONS = ["cogs.mods", "cogs.levels", "cogs.misc"]
 
 # XP cooldown tracker
 _message_cooldowns = {}
@@ -25,14 +26,6 @@ _spam_tracker = {}
 SPAM_THRESHOLD = 5
 
 # ----------------- EVENTS -----------------
-@bot.event
-async def on_connect():
-    if not hasattr(bot, "db"):
-        bot.db = Database()
-        await bot.db.connect()
-        await bot.db.create_tables()
-    print("🔗 Database connected.")
-
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user} (ID:{bot.user.id})")
@@ -60,8 +53,8 @@ async def on_message(message: discord.Message):
     if now - last >= XP_COOLDOWN:
         try:
             await bot.db.add_xp(user_id, guild_id, XP_PER_MESSAGE)
-        except:
-            pass
+        except Exception as e:
+            print(f"XP Error: {e}")
         _message_cooldowns[key] = now
 
     # ---------------- Spam ----------------
@@ -73,27 +66,30 @@ async def on_message(message: discord.Message):
     _spam_tracker[key] = (content, count)
 
     if count >= SPAM_THRESHOLD:
-        warns = await bot.db.add_warn(user_id, guild_id)
-        await message.channel.send(f"⚠️ {message.author.mention} auto-warned for spamming! ({warns}/6)")
         try:
-            await message.author.send(f"⚠️ Auto-warned in {message.guild.name}! ({warns}/6)")
-        except:
-            pass
+            warns = await bot.db.add_warn(user_id, guild_id)
+            await message.channel.send(f"⚠️ {message.author.mention} auto-warned for spamming! ({warns}/6)")
+            try:
+                await message.author.send(f"⚠️ Auto-warned in {message.guild.name}! ({warns}/6)")
+            except:
+                pass
 
-        mod_cog = bot.get_cog("Mod")
-        if mod_cog:
-            if warns == 3:
-                await mod_cog.mute_member(message.guild, message.author, 3600, "3rd warn (spam)")
-            elif warns == 4:
-                await mod_cog.mute_member(message.guild, message.author, 86400, "4th warn (spam)")
-            elif warns == 5:
-                await message.author.kick(reason="5th warn (spam)")
-                await message.channel.send(f"✅ {message.author.mention} kicked due to 5 warns.")
-            elif warns >= 6:
-                await message.author.ban(reason="6th warn (spam)")
-                await message.channel.send(f"⛔ {message.author.mention} banned due to 6 warns.")
+            mod_cog = bot.get_cog("Mod")
+            if mod_cog:
+                if warns == 3:
+                    await mod_cog.mute_member(message.guild, message.author, 3600, "3rd warn (spam)")
+                elif warns == 4:
+                    await mod_cog.mute_member(message.guild, message.author, 86400, "4th warn (spam)")
+                elif warns == 5:
+                    await message.author.kick(reason="5th warn (spam)")
+                    await message.channel.send(f"✅ {message.author.mention} kicked due to 5 warns.")
+                elif warns >= 6:
+                    await message.author.ban(reason="6th warn (spam)")
+                    await message.channel.send(f"⛔ {message.author.mention} banned due to 6 warns.")
 
-        _spam_tracker[key] = ("", 0)
+            _spam_tracker[key] = ("", 0)
+        except Exception as e:
+            print(f"Spam detection error: {e}")
 
     await bot.process_commands(message)
 
@@ -102,19 +98,19 @@ async def load_extensions():
     for ext in INITIAL_EXTENSIONS:
         try:
             await bot.load_extension(ext)
-            print(f"Loaded {ext}")
+            print(f"✅ Loaded {ext}")
         except Exception as e:
-            print(f"Failed to load {ext}: {e}")
+            print(f"❌ Failed to load {ext}: {e}")
 
 # ----------------- MAIN -----------------
 async def main():
-    await load_extensions()
-
     # DB setup
-    if not hasattr(bot, "db"):
-        bot.db = Database()
-        await bot.db.connect()
-        await bot.db.create_tables()
+    bot.db = Database()
+    await bot.db.connect()
+    await bot.db.create_tables()
+    print("🔗 Database connected and tables created.")
+
+    await load_extensions()
 
     TOKEN = os.getenv("DISCORD_TOKEN")
     if not TOKEN:
@@ -126,3 +122,5 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("Shutting down...")
+    except Exception as e:
+        print(f"Fatal error: {e}")
