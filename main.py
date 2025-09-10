@@ -53,6 +53,18 @@ async def on_message(message: discord.Message):
     if now - last >= XP_COOLDOWN:
         try:
             await bot.db.add_xp(user_id, guild_id, XP_PER_MESSAGE)
+            
+            # Check for level up
+            xp = await bot.db.get_user(user_id, guild_id)
+            level = bot.db.xp_to_level(xp)
+            prev_level = bot.db.xp_to_level(xp - XP_PER_MESSAGE)
+            
+            if level > prev_level:
+                # Level up!
+                levels_cog = bot.get_cog("Levels")
+                if levels_cog:
+                    await levels_cog.send_level_up_message(message.channel, message.author, level)
+                    
         except Exception as e:
             print(f"XP Error: {e}")
         _message_cooldowns[key] = now
