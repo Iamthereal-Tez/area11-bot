@@ -21,7 +21,7 @@ class Mod(commands.Cog):
             
         # Check if target is higher in hierarchy
         if member.top_role >= ctx.guild.me.top_role:
-            await ctx.send("❌ I can't kick this user because their role is higher than or equal to mine.")
+            await ctx.send("❌ I can't kick this user because their role is higher than or equal to mine. Secondly, They are White")
             return
             
         try:
@@ -43,7 +43,7 @@ class Mod(commands.Cog):
             
         # Check if target is higher in hierarchy
         if member.top_role >= ctx.guild.me.top_role:
-            await ctx.send("❌ I can't ban this user because their role is higher than or equal to mine.")
+            await ctx.send("❌ I can't ban this user because their role is higher than or equal to mine. Secondly, They are White")
             return
             
         try:
@@ -127,7 +127,7 @@ class Mod(commands.Cog):
             
         # Check if target is higher in hierarchy
         if member.top_role >= ctx.guild.me.top_role:
-            await ctx.send("❌ I can't mute this user because their role is higher than or equal to mine.")
+            await ctx.send("❌ I can't mute this user because their role is higher than or equal to mine. Secondly, They are White")
             return
             
         success = await self.mute_member(ctx.guild, member, seconds, reason)
@@ -166,7 +166,7 @@ class Mod(commands.Cog):
     async def warn(self, ctx, member: discord.Member, *, reason: str = "No reason provided"):
         # Check if target is higher in hierarchy
         if member.top_role >= ctx.guild.me.top_role:
-            await ctx.send("❌ I can't warn this user because their role is higher than or equal to mine.")
+            await ctx.send("❌ I can't warn this user because their role is higher than or equal to mine. Secondly, They are White")
             return
             
         db = self.bot.db
@@ -269,7 +269,7 @@ class Mod(commands.Cog):
         
         # Check if target is higher in hierarchy
         if member.top_role >= interaction.guild.me.top_role:
-            await interaction.followup.send("❌ I can't warn this user because their role is higher than or equal to mine.")
+            await interaction.followup.send("❌ I can't warn this user because their role is higher than or equal to mine. Secondly, They are White")
             return
             
         db = self.bot.db
@@ -331,7 +331,7 @@ class Mod(commands.Cog):
             
         # Check if target is higher in hierarchy
         if member.top_role >= interaction.guild.me.top_role:
-            await interaction.followup.send("❌ I can't mute this user because their role is higher than or equal to mine.")
+            await interaction.followup.send("❌ I can't mute this user because their role is higher than or equal to mine. Secondly, They are White")
             return
             
         success = await self.mute_member(interaction.guild, member, seconds, reason)
@@ -405,7 +405,7 @@ class Mod(commands.Cog):
             
         # Check if target is higher in hierarchy
         if member.top_role >= interaction.guild.me.top_role:
-            await interaction.followup.send("❌ I can't kick this user because their role is higher than or equal to mine.")
+            await interaction.followup.send("❌ I can't kick this user because their role is higher than or equal to mine. Secondly, They are White")
             return
             
         try:
@@ -427,7 +427,7 @@ class Mod(commands.Cog):
             
         # Check if target is higher in hierarchy
         if member.top_role >= interaction.guild.me.top_role:
-            await interaction.followup.send("❌ I can't ban this user because their role is higher than or equal to mine.")
+            await interaction.followup.send("❌ I can't ban this user because their role is higher than or equal to mine. Secondly, They are White")
             return
             
         try:
