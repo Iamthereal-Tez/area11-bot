@@ -1,8 +1,13 @@
-# main.py
-import os, time, asyncio
+import os
+import time
+import asyncio
 import discord
 from discord.ext import commands
 from utils.db import Database
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -11,19 +16,22 @@ intents.reactions = True
 
 BOT_PREFIX = "."
 bot = commands.Bot(command_prefix=BOT_PREFIX, intents=intents, help_command=None)
-tree = bot.tree
-
-# Load all cogs
-INITIAL_EXTENSIONS = ["cogs.mods", "cogs.levels", "cogs.misc"]
 
 # XP cooldown tracker
 _message_cooldowns = {}
-XP_PER_MESSAGE = 10
+XP_PER_MESSAGE = 15  # Updated to 15 XP per message
 XP_COOLDOWN = 60
 
 # Spam tracker
 _spam_tracker = {}
 SPAM_THRESHOLD = 5
+
+# Level up cooldown
+_levelup_cooldowns = {}
+LEVELUP_COOLDOWN = 300  # 5 minutes
+
+# Load all cogs
+INITIAL_EXTENSIONS = ["cogs.mods", "cogs.levels", "cogs.misc"]
 
 # ----------------- EVENTS -----------------
 @bot.event
@@ -32,7 +40,7 @@ async def on_ready():
     
     # Sync slash commands globally
     try:
-        synced = await tree.sync()
+        synced = await bot.tree.sync()
         print(f"✅ Synced {len(synced)} slash commands globally.")
     except Exception as e:
         print("❌ Sync error:", e)
@@ -60,10 +68,13 @@ async def on_message(message: discord.Message):
             prev_level = bot.db.xp_to_level(xp - XP_PER_MESSAGE)
             
             if level > prev_level:
-                # Level up!
-                levels_cog = bot.get_cog("Levels")
-                if levels_cog:
-                    await levels_cog.send_level_up_message(message.channel, message.author, level)
+                # Level up! Check cooldown
+                last_levelup = _levelup_cooldowns.get(key, 0)
+                if now - last_levelup >= LEVELUP_COOLDOWN:
+                    _levelup_cooldowns[key] = now
+                    levels_cog = bot.get_cog("Levels")
+                    if levels_cog:
+                        await levels_cog.send_level_up_message(message.channel, message.author, level)
                     
         except Exception as e:
             print(f"XP Error: {e}")
