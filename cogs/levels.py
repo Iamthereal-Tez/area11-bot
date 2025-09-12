@@ -97,7 +97,7 @@ class Levels(commands.Cog):
         draw.text((320, 160), f"XP: {xp}", font=normal_font, fill=(200, 255, 200, 255))
         
         # Calculate XP progress
-        next_level_xp = (level + 1) * 100
+        next_level_xp = ((level + 1) / 0.1) ** 2  # Calculate XP needed for next level
         progress = min(1.0, xp / next_level_xp) if next_level_xp > 0 else 0
         
         # XP bar background
@@ -111,7 +111,7 @@ class Levels(commands.Cog):
             draw.rounded_rectangle([bar_x, bar_y, bar_x + filled, bar_y + bar_h], radius=10, fill=(100, 150, 255, 255))
         
         # XP text on bar
-        draw.text((bar_x + 10, bar_y + 5), f"{xp}/{next_level_xp} XP", font=small_font, fill=(255, 255, 255, 255))
+        draw.text((bar_x + 10, bar_y + 5), f"{xp}/{int(next_level_xp)} XP", font=small_font, fill=(255, 255, 255, 255))
         
         # Progress percentage
         draw.text((bar_x + bar_w - 50, bar_y + 5), f"{int(progress*100)}%", font=small_font, fill=(255, 255, 255, 255))
@@ -173,7 +173,7 @@ class Levels(commands.Cog):
             embed.add_field(name="Rank", value=f"#{rank}", inline=True)
             
             # Calculate progress to next level
-            next_level_xp = (level + 1) * 100
+            next_level_xp = ((level + 1) / 0.1) ** 2  # Calculate XP needed for next level
             progress = min(1.0, xp / next_level_xp) if next_level_xp > 0 else 0
             
             # Progress bar
@@ -187,6 +187,57 @@ class Levels(commands.Cog):
             await ctx.reply(embed=embed)
         except Exception as e:
             await ctx.reply(f"Error showing level: {e}")
+
+    # --------- XP Management Commands (Mods only) ---------
+    @commands.command(name="addxp")
+    @commands.has_permissions(manage_messages=True)
+    async def addxp_prefix(self, ctx, member: discord.Member, amount: int):
+        """Add XP to a user"""
+        if amount <= 0:
+            await ctx.reply("Amount must be positive.")
+            return
+            
+        current_xp = await self.bot.db.get_user(member.id, ctx.guild.id)
+        new_xp = current_xp + amount
+        await self.bot.db.set_xp(member.id, ctx.guild.id, new_xp)
+        
+        new_level = self.bot.db.xp_to_level(new_xp)
+        await ctx.reply(f"Added {amount} XP to {member.mention}. They are now level {new_level}.")
+
+    @commands.command(name="removexp")
+    @commands.has_permissions(manage_messages=True)
+    async def removexp_prefix(self, ctx, member: discord.Member, amount: int):
+        """Remove XP from a user"""
+        if amount <= 0:
+            await ctx.reply("Amount must be positive.")
+            return
+            
+        current_xp = await self.bot.db.get_user(member.id, ctx.guild.id)
+        new_xp = max(0, current_xp - amount)
+        await self.bot.db.set_xp(member.id, ctx.guild.id, new_xp)
+        
+        new_level = self.bot.db.xp_to_level(new_xp)
+        await ctx.reply(f"Removed {amount} XP from {member.mention}. They are now level {new_level}.")
+
+    @commands.command(name="setxp")
+    @commands.has_permissions(manage_messages=True)
+    async def setxp_prefix(self, ctx, member: discord.Member, amount: int):
+        """Set a user's XP to a specific value"""
+        if amount < 0:
+            await ctx.reply("Amount cannot be negative.")
+            return
+            
+        await self.bot.db.set_xp(member.id, ctx.guild.id, amount)
+        
+        new_level = self.bot.db.xp_to_level(amount)
+        await ctx.reply(f"Set {member.mention}'s XP to {amount}. They are now level {new_level}.")
+
+    @commands.command(name="resetxp")
+    @commands.has_permissions(manage_messages=True)
+    async def resetxp_prefix(self, ctx, member: discord.Member):
+        """Reset a user's XP to 0"""
+        await self.bot.db.set_xp(member.id, ctx.guild.id, 0)
+        await ctx.reply(f"Reset {member.mention}'s XP. They are now level 1.")
 
     # Leaderboard with image
     @commands.command(name="leaderboard", aliases=["lb"])
@@ -252,7 +303,7 @@ class Levels(commands.Cog):
                 draw.text((160, y_pos+10), f"Level {level} | {xp} XP", font=font_small, fill=(200, 200, 200, 255))
                 
                 # XP bar
-                next_level_xp = (level + 1) * 100
+                next_level_xp = ((level + 1) / 0.1) ** 2  # Calculate XP needed for next level
                 progress = min(1.0, xp / next_level_xp) if next_level_xp > 0 else 0
                 bar_width = 300
                 draw.rectangle([450, y_pos-5, 450 + bar_width, y_pos+5], fill=(50, 50, 70, 255))
@@ -330,7 +381,7 @@ class Levels(commands.Cog):
             embed.add_field(name="Rank", value=f"#{rank}", inline=True)
             
             # Calculate progress to next level
-            next_level_xp = (level + 1) * 100
+            next_level_xp = ((level + 1) / 0.1) ** 2  # Calculate XP needed for next level
             progress = min(1.0, xp / next_level_xp) if next_level_xp > 0 else 0
             
             # Progress bar
@@ -410,7 +461,7 @@ class Levels(commands.Cog):
                 draw.text((160, y_pos+10), f"Level {level} | {xp} XP", font=font_small, fill=(200, 200, 200, 255))
                 
                 # XP bar
-                next_level_xp = (level + 1) * 100
+                next_level_xp = ((level + 1) / 0.1) ** 2  # Calculate XP needed for next level
                 progress = min(1.0, xp / next_level_xp) if next_level_xp > 0 else 0
                 bar_width = 300
                 draw.rectangle([450, y_pos-5, 450 + bar_width, y_pos+5], fill=(50, 50, 70, 255))
@@ -441,6 +492,65 @@ class Levels(commands.Cog):
                 await interaction.followup.send(embed=embed)
             except Exception as e2:
                 await interaction.followup.send(f"Error loading leaderboard: {e2}")
+
+    # --------- XP Management Slash Commands (Mods only) ---------
+    @app_commands.command(name="addxp", description="Add XP to a user")
+    @app_commands.checks.has_permissions(manage_messages=True)
+    @app_commands.describe(user="User to add XP to", amount="Amount of XP to add")
+    async def addxp_slash(self, interaction: discord.Interaction, user: discord.Member, amount: int):
+        await interaction.response.defer()
+        
+        if amount <= 0:
+            await interaction.followup.send("Amount must be positive.")
+            return
+            
+        current_xp = await self.bot.db.get_user(user.id, interaction.guild.id)
+        new_xp = current_xp + amount
+        await self.bot.db.set_xp(user.id, interaction.guild.id, new_xp)
+        
+        new_level = self.bot.db.xp_to_level(new_xp)
+        await interaction.followup.send(f"Added {amount} XP to {user.mention}. They are now level {new_level}.")
+
+    @app_commands.command(name="removexp", description="Remove XP from a user")
+    @app_commands.checks.has_permissions(manage_messages=True)
+    @app_commands.describe(user="User to remove XP from", amount="Amount of XP to remove")
+    async def removexp_slash(self, interaction: discord.Interaction, user: discord.Member, amount: int):
+        await interaction.response.defer()
+        
+        if amount <= 0:
+            await interaction.followup.send("Amount must be positive.")
+            return
+            
+        current_xp = await self.bot.db.get_user(user.id, interaction.guild.id)
+        new_xp = max(0, current_xp - amount)
+        await self.bot.db.set_xp(user.id, interaction.guild.id, new_xp)
+        
+        new_level = self.bot.db.xp_to_level(new_xp)
+        await interaction.followup.send(f"Removed {amount} XP from {user.mention}. They are now level {new_level}.")
+
+    @app_commands.command(name="setxp", description="Set a user's XP to a specific value")
+    @app_commands.checks.has_permissions(manage_messages=True)
+    @app_commands.describe(user="User to set XP for", amount="Amount of XP to set")
+    async def setxp_slash(self, interaction: discord.Interaction, user: discord.Member, amount: int):
+        await interaction.response.defer()
+        
+        if amount < 0:
+            await interaction.followup.send("Amount cannot be negative.")
+            return
+            
+        await self.bot.db.set_xp(user.id, interaction.guild.id, amount)
+        
+        new_level = self.bot.db.xp_to_level(amount)
+        await interaction.followup.send(f"Set {user.mention}'s XP to {amount}. They are now level {new_level}.")
+
+    @app_commands.command(name="resetxp", description="Reset a user's XP to 0")
+    @app_commands.checks.has_permissions(manage_messages=True)
+    @app_commands.describe(user="User to reset XP for")
+    async def resetxp_slash(self, interaction: discord.Interaction, user: discord.Member):
+        await interaction.response.defer()
+        
+        await self.bot.db.set_xp(user.id, interaction.guild.id, 0)
+        await interaction.followup.send(f"Reset {user.mention}'s XP. They are now level 1.")
 
 async def setup(bot):
     await bot.add_cog(Levels(bot))
