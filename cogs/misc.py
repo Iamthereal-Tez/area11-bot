@@ -235,7 +235,18 @@ class Misc(commands.Cog):
                   f"`{BOT_PREFIX}mute <user> <duration> [reason]` - Mute a user\n"
                   f"`{BOT_PREFIX}unmute <user>` - Unmute a user\n"
                   f"`{BOT_PREFIX}kick <user> [reason]` - Kick a user\n"
-                  f"`{BOT_PREFIX}ban <user> [days] [reason]` - Ban a user",
+                  f"`{BOT_PREFIX}ban <user> [days] [reason]` - Ban a user\n"
+                  f"`{BOT_PREFIX}purge <amount>` - Delete messages",
+            inline=False
+        )
+        
+        # XP Management commands
+        embed.add_field(
+            name="📊 XP Management Commands",
+            value=f"`{BOT_PREFIX}addxp <user> <amount>` - Add XP to a user\n"
+                  f"`{BOT_PREFIX}removexp <user> <amount>` - Remove XP from a user\n"
+                  f"`{BOT_PREFIX}setxp <user> <amount>` - Set a user's XP\n"
+                  f"`{BOT_PREFIX}resetxp <user>` - Reset a user's XP",
             inline=False
         )
         
