@@ -19,6 +19,7 @@ Usage:
 import os
 import aiosqlite
 import asyncpg
+import math
 
 class Database:
     def __init__(self):
@@ -28,16 +29,18 @@ class Database:
         self._using_pg = False
 
     async def connect(self):
-        if self.database_url:
+        if self.database_url and self.database_url.startswith("postgres"):
             # Using Postgres
             self._pg_pool = await asyncpg.create_pool(dsn=self.database_url, min_size=1, max_size=5)
             self._using_pg = True
+            print("Using PostgreSQL database")
         else:
             # Fallback to SQLite file
             self._sqlite_conn = await aiosqlite.connect("levels.db")
             await self._sqlite_conn.execute("PRAGMA journal_mode=WAL;")
             await self._sqlite_conn.commit()
             self._using_pg = False
+            print("Using SQLite database")
 
     async def create_tables(self):
         if self._using_pg:
@@ -182,7 +185,8 @@ class Database:
     # ---------------- Misc ----------------
     @staticmethod
     def xp_to_level(xp: int) -> int:
-        return int((xp / 100) ** 0.5 * 10)  # tuning factor for scaling
+        # Updated to use exponential formula: level = floor(0.1 * sqrt(xp)) + 1
+        return math.floor(0.1 * math.sqrt(xp)) + 1 if xp > 0 else 1
 
     async def close(self):
         if self._using_pg and self._pg_pool:
