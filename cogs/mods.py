@@ -58,7 +58,7 @@ class Mod(commands.Cog):
     async def mute_member(self, guild, member: discord.Member, duration_seconds: int, reason: str):
         # Check if bot has permission to manage roles
         if not guild.me.guild_permissions.manage_roles:
-            return  # Can't proceed without this permission
+            return False  # Can't proceed without this permission
             
         # Try to use timeout feature first (Discord.py 2.0+)
         try:
@@ -109,13 +109,13 @@ class Mod(commands.Cog):
         # Parse duration
         try:
             if duration.endswith('m'):
-                minutes = int(duration[:-1])
+                seconds = int(duration[:-1]) * 60
             elif duration.endswith('h'):
-                minutes = int(duration[:-1]) * 60
+                seconds = int(duration[:-1]) * 3600
             elif duration.endswith('d'):
-                minutes = int(duration[:-1]) * 1440
+                seconds = int(duration[:-1]) * 86400
             else:
-                minutes = int(duration)  # Assume minutes if no suffix
+                seconds = int(duration) * 60  # Assume minutes if no suffix
         except ValueError:
             await ctx.send("❌ Invalid duration format. Use like: 10m, 1h, 2d")
             return
@@ -130,7 +130,7 @@ class Mod(commands.Cog):
             await ctx.send("❌ I can't mute this user because their role is higher than or equal to mine.")
             return
             
-        success = await self.mute_member(ctx.guild, member, minutes*60, reason)
+        success = await self.mute_member(ctx.guild, member, seconds, reason)
         if success:
             await ctx.send(f"🔇 Muted {member.mention} for {duration}. Reason: {reason}")
         else:
@@ -222,6 +222,29 @@ class Mod(commands.Cog):
         await self.bot.db.reset_warns(member.id, ctx.guild.id)
         await ctx.send(f"✅ Cleared all warns for {member.mention}")
 
+    # ------------------- Purge Messages -------------------
+    @commands.command(name="purge")
+    @has_permissions(manage_messages=True)
+    async def purge(self, ctx, amount: int):
+        """Delete multiple messages"""
+        if amount <= 0:
+            await ctx.send("❌ Amount must be positive.")
+            return
+        
+        if amount > 100:
+            amount = 100
+        
+        # Delete the command message first
+        await ctx.message.delete()
+        
+        # Delete the specified number of messages
+        deleted = await ctx.channel.purge(limit=amount)
+        
+        # Send confirmation message that auto-deletes
+        msg = await ctx.send(f"✅ Deleted {len(deleted)} messages.")
+        await asyncio.sleep(5)
+        await msg.delete()
+
     # ------------------- Error Handlers -------------------
     @kick.error
     @ban.error
@@ -230,6 +253,7 @@ class Mod(commands.Cog):
     @unmute.error
     @listwarns.error
     @clearwarns.error
+    @purge.error
     async def perm_error(self, ctx, error):
         if isinstance(error, MissingPermissions):
             await ctx.send("❌ You don't have permission to use this command.")
@@ -289,13 +313,13 @@ class Mod(commands.Cog):
         # Parse duration
         try:
             if duration.endswith('m'):
-                minutes = int(duration[:-1])
+                seconds = int(duration[:-1]) * 60
             elif duration.endswith('h'):
-                minutes = int(duration[:-1]) * 60
+                seconds = int(duration[:-1]) * 3600
             elif duration.endswith('d'):
-                minutes = int(duration[:-1]) * 1440
+                seconds = int(duration[:-1]) * 86400
             else:
-                minutes = int(duration)  # Assume minutes if no suffix
+                seconds = int(duration) * 60  # Assume minutes if no suffix
         except ValueError:
             await interaction.followup.send("❌ Invalid duration format. Use like: 10m, 1h, 2d")
             return
@@ -310,7 +334,7 @@ class Mod(commands.Cog):
             await interaction.followup.send("❌ I can't mute this user because their role is higher than or equal to mine.")
             return
             
-        success = await self.mute_member(interaction.guild, member, minutes*60, reason)
+        success = await self.mute_member(interaction.guild, member, seconds, reason)
         if success:
             await interaction.followup.send(f"🔇 Muted {member.mention} for {duration}. Reason: {reason}")
         else:
@@ -411,6 +435,27 @@ class Mod(commands.Cog):
             await interaction.followup.send(f"✅ Banned {member.mention} • {reason}")
         except discord.Forbidden:
             await interaction.followup.send("❌ I don't have permission to ban this user.")
+
+    @app_commands.command(name="purge", description="Delete multiple messages")
+    @app_commands.checks.has_permissions(manage_messages=True)
+    @app_commands.describe(amount="Number of messages to delete (max 100)")
+    async def purge_slash(self, interaction: discord.Interaction, amount: int):
+        await interaction.response.defer()
+        
+        if amount <= 0:
+            await interaction.followup.send("❌ Amount must be positive.")
+            return
+        
+        if amount > 100:
+            amount = 100
+        
+        # Delete the specified number of messages
+        deleted = await interaction.channel.purge(limit=amount)
+        
+        # Send confirmation message that auto-deletes
+        msg = await interaction.followup.send(f"✅ Deleted {len(deleted)} messages.")
+        await asyncio.sleep(5)
+        await msg.delete()
 
 async def setup(bot):
     await bot.add_cog(Mod(bot))
